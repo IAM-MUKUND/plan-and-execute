@@ -1,0 +1,29 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Pytest / Cache
+.pytest_cache/
+.cache
+
+# Environments & Secrets
+.env
+.env.*
+env/
+venv/
+.venv/
+ENV/
+
+# Application Logs
+*.log
+backend/logs/*.json
+!backend/logs/.gitkeep
+
+# IDEs & OS Files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
