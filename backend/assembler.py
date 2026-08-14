@@ -68,7 +68,7 @@ def assemble_final_recommendation(state: AppState) -> str:
             "price_inr": price_inr
         }
 
-        if pstate.name in selected_names_set:
+        if pstate.name.strip().lower() in {n.strip().lower() for n in selected_names_set}:
             selected_products[pstate.name] = entry
         else:
             # Brief entry for non-selected candidates (pricing only, no specs/perf)
@@ -108,7 +108,7 @@ def assemble_final_recommendation(state: AppState) -> str:
         recommendation_report = (
             f"## Final Recommendation Report (Fallback)\n\n"
             f"Failed to generate full synthesis report due to error: {e}\n\n"
-            f"### Collected Products Data:\n```json\n{json.dumps(products_summary, indent=2)}\n```"
+            f"### Collected State Context:\n```json\n{json.dumps(state_context, indent=2)}\n```"
         )
 
     # Mark the final generate_recommendation step as completed in state

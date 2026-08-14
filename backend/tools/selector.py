@@ -3,9 +3,11 @@ import logging
 import re
 from typing import List, Dict, Any
 from groq import Groq
+from rich.console import Console
 from backend.tools.key_manager import key_manager
 
 logger = logging.getLogger("selector")
+console = Console()
 
 SELECTOR_SYSTEM_PROMPT = """
 You are a Product Shortlist Selector Agent.
@@ -138,17 +140,21 @@ def run_selector(
         # Validate and extract names — ensure they match actual candidate names
         candidate_names = {p["name"] for p in priced_candidates}
         selected_names = []
+        rank = 1
         for item in selected_list:
             if isinstance(item, dict):
                 name = item.get("name", "").strip()
                 reason = item.get("selection_reason", "")
                 if name in candidate_names:
                     selected_names.append(name)
+                    console.print(f"    [bold cyan]#{rank}[/bold cyan] [green]{name}[/green] — [dim]{reason}[/dim]")
                     logger.info(f"  Selector picked: '{name}' — {reason}")
+                    rank += 1
                 else:
                     logger.warning(f"  Selector returned unknown name '{name}', skipping.")
 
         if excluded_note:
+            console.print(f"    [dim]  ↳ Excluded: {excluded_note}[/dim]")
             logger.info(f"  Excluded: {excluded_note}")
 
         if len(selected_names) >= 2:
@@ -156,9 +162,11 @@ def run_selector(
 
     except Exception as e:
         logger.error(f"Selector agent failed: {e}")
+        console.print(f"    [red]  ⚠ Selector agent error: {e}[/red]")
 
     # Fallback: return top within-budget candidates sorted by descending price
     logger.warning("Selector agent fallback: using price-descending sort.")
+    console.print("    [yellow]  ⟳ Fallback: using price-descending sort on within-budget candidates.[/yellow]")
     within_budget = sorted(
         [p for p in priced_candidates if p.get("within_budget")],
         key=lambda x: x.get("price_inr") or 0,

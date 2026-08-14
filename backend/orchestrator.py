@@ -185,12 +185,17 @@ def handle_identify_products(task: SubTask, state: AppState) -> str:
             state.get_or_create_product(prod_name)
             pricing = run_pricing_executor(prod_name, state)
             price_inr = pricing.get("price_inr")
+            
+            if state.budget and isinstance(price_inr, (int, float)):
+                within = price_inr <= state.budget
+            else:
+                within = True  # No budget set → treat all as in-budget
+            
             all_priced[prod_name] = {
                 "name": prod_name,
                 "price_inr": price_inr,
                 "formatted": pricing.get("formatted_price", "N/A"),
-                "within_budget": isinstance(price_inr, (int, float)) and bool(state.budget) and price_inr <= state.budget
-                    if state.budget else True  # No budget = all within budget
+                "within_budget": within
             }
 
     # Display full pricing verification results
