@@ -29,16 +29,25 @@ While paper 2305.04091 introduces zero-shot prompt decomposition to reduce reaso
 └──────┬───────┘
        │
        ▼
-┌────────────────────────────────────────────────────────┐
-│               Topological Orchestrator                 │
-│  (Executes ready tasks sequentially in dependency order)│
-└──────┬────────────────────┬────────────────────┬───────┘
+┌────────────────────────────────────────────────────────────────────────┐
+│                        Topological Orchestrator                        │
+│          (Executes ready tasks sequentially in dependency order)        │
+└──────┬─────────────────────────────────────────────────────────────────┘
+       │
+       ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                     identify_products Subtask                          │
+│ 1. Tavily Search (8 results) ──► LLM Candidate Extraction (8 models)   │
+│ 2. Live Pricing Verification Pass on all 8 candidates                   │
+│ 3. [RETRY SEARCH if < 2 in-budget] ──► Alternate Query & Pricing Pass  │
+│ 4. LLM Selector Agent (llama-3.1-8b) ──► Pick best 3 for analysis      │
+└──────┬────────────────────┬────────────────────┬───────────────────────┘
        │                    │                    │
        ▼                    ▼                    ▼
 ┌──────────────┐     ┌──────────────┐     ┌──────────────────┐
 │    Specs     │     │   Pricing    │     │   Performance    │
 │   Executor   │     │   Executor   │     │     Executor     │
-│ (Tavily Search)    │ (India INR)  │     │(Reuses State     │
+│ (Tavily Search)    │(INR - Cached)│     │(Reuses State     │
 │ (8B-Instant) │     │ (8B-Instant) │     │ + LLM Spec Lookup│
 └──────┬───────┘     └──────┬───────┘     │ 70B-Versatile)   │
        │                    │             └────────┬─────────┘
@@ -58,19 +67,24 @@ While paper 2305.04091 introduces zero-shot prompt decomposition to reduce reaso
 
 ## 🚀 Key Technical Innovations
 
-1. **Multi-Key Failover Pool (`key_manager.py`)**:
+1. **LLM Selector Agent & Budget-Search Retry Loop (`selector.py`)**:
+   - Replaces fixed hardcoded sorting heuristics with an autonomous LLM Selector Agent (`llama-3.1-8b-instant`).
+   - Reasons over budget compliance, price-to-budget fit (avoids picking ₹85K for a ₹2.5L budget), priority alignment (GPU/VRAM for ML, high TGP for gaming), diversity, and model recency.
+   - Features an automated retry loop in `orchestrator.py`: if fewer than 2 in-budget options are found in initial pricing, retries Tavily search with domain-restricted (`site:amazon.in OR site:flipkart.com`) or value-broadened queries.
+
+2. **Multi-Key Failover Pool (`key_manager.py`)**:
    - Manages pools of Groq (`GROQ_API_KEY1..3`) and Tavily (`TAVILY_API_KEY1..3`) API keys loaded from `.env`.
    - Automatically catches HTTP 429 / Rate Limit / Quota Exceeded exceptions and cycles to the next key seamlessly without crashing executions.
 
-2. **Zero Keyword Matching — LLM-Assisted Hardware Lookup (`spec_lookup.py`)**:
+3. **Zero Keyword Matching — LLM-Assisted Hardware Lookup (`spec_lookup.py`)**:
    - Completely avoids fragile string/regex/keyword matching (e.g., matching `"RTX 4060"` in raw web text).
    - Uses `llama-3.1-8b-instant` as an LLM tool call to analyze raw component descriptions and map them to standardized benchmark tier metrics (Tiers 1–4, 1–100 scores, VRAM, and performance verdicts).
 
-3. **Strict Non-Redundant Execution**:
+4. **Strict Non-Redundant Execution**:
    - The Performance Executor relies **only** on specs already collected in `AppState.products[name].specs` by upstream steps.
    - It explicitly avoids re-querying search engines for raw specs, proving clean information passing across subtask dependencies.
 
-4. **Structured JSON Run Logging (`logger_util.py`)**:
+5. **Structured JSON Run Logging (`logger_util.py`)**:
    - Every run automatically dumps a complete execution trace to `backend/logs/{timestamp}.json` containing the original prompt, plan, extracted products data, recommendation text, and total latency in seconds.
 
 ---
@@ -80,6 +94,7 @@ While paper 2305.04091 introduces zero-shot prompt decomposition to reduce reaso
 | Role / Component | Model / Tool | Why Selected |
 | :--- | :--- | :--- |
 | **Planner Agent** | `llama-3.3-70b-versatile` (Groq) | High reasoning capacity for intent parsing & DAG subtask generation |
+| **Selector Agent** | `llama-3.1-8b-instant` (Groq) | Multi-criteria reasoning to shortlist 3 candidates from priced pool |
 | **Specs Executor** | `llama-3.1-8b-instant` (Groq) | Ultra-fast structured extraction from web snippets |
 | **Pricing Executor** | `llama-3.1-8b-instant` (Groq) | Fast currency & budget status parsing |
 | **Hardware Lookup Tool** | `llama-3.1-8b-instant` (Groq) | LLM hardware evaluation without string keyword matching |
@@ -98,7 +113,7 @@ CAT-1/
 ├── backend/
 │   ├── main.py                # FastAPI app + CLI entry point
 │   ├── planner.py             # Subtask JSON plan generator (llama-3.3-70b)
-│   ├── orchestrator.py        # Topological dependency-ordered execution loop
+│   ├── orchestrator.py        # Topological dependency-ordered execution loop & retry logic
 │   ├── assembler.py           # Final recommendation synthesis agent
 │   ├── state.py               # AppState, ProductState & SubTask Pydantic schemas
 │   ├── logger_util.py         # Structured JSON run log persistence
@@ -109,7 +124,8 @@ CAT-1/
 │   ├── tools/
 │   │   ├── key_manager.py     # API key rotation & 429 rate limit failover
 │   │   ├── web_search.py      # Tavily search tool wrapper
-│   │   └── spec_lookup.py     # LLM-powered hardware benchmark tool
+│   │   ├── spec_lookup.py     # LLM-powered hardware benchmark tool
+│   │   └── selector.py        # LLM Candidate Selector Agent (llama-3.1-8b)
 │   └── logs/                  # Persistent JSON run logs
 ├── tests/
 │   ├── test_state_planner.py  # Pytest suite for state & dependency resolution

@@ -106,7 +106,7 @@ def _extract_candidates_from_snippets(snippets_text: str, state: AppState) -> Li
             f"Search Snippets:\n{snippets_text}"
         )
         response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model="llama-3.3-70b-versatile",
             messages=[
                 {"role": "system", "content": IDENTIFY_PRODUCTS_PROMPT},
                 {"role": "user", "content": prompt_content}
